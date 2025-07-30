@@ -1,0 +1,55 @@
+{
+  "name": "circle-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "compile-circuits": "node scripts/compile-circuits.js"
+  },
+  "dependencies": {
+    "@lit-protocol/contracts-sdk": "^7.2.1",
+    "@lit-protocol/lit-node-client": "^7.2.1",
+    "@walletconnect/modal": "^2.7.0",
+    "@walletconnect/web3wallet": "^1.16.1",
+    "@xmtp/xmtp-js": "^13.0.4",
+    "better-sqlite3": "^12.2.0",
+    "circomlib": "^2.0.5",
+    "ffjavascript": "^0.2.63",
+    "framer-motion": "^10.16.16",
+    "lucide-react": "^0.294.0",
+    "next": "14.0.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "snarkjs": "^0.7.5",
+    "socks-proxy-agent": "^8.0.5",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "tor-request": "^3.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.5",
+    "@types/node-fetch": "^2.6.12",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@types/ws": "^8.18.1",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "14.0.4",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "typescript": "^5.3.3"
+  }
+}
+
+ 
+ 
+ 
+ 
+ 
+ 
+
