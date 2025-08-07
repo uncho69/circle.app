@@ -1,88 +1,100 @@
 import { NextApiRequest, NextApiResponse } from 'next'
-import { initDatabase, getPosts } from '../../../utils/database'
-
-// Initialize database
-let dbInitialized = false
-const initDb = () => {
-  if (!dbInitialized) {
-    initDatabase()
-    dbInitialized = true
-  }
-}
-
-export interface Post {
-  id: string
-  content: string
-  author: string
-  timestamp: string
-  encrypted: boolean
-  signature?: string
-  likes: number
-  replies: number
-  reposts: number
-  views: number
-  visibility: 'public' | 'followers' | 'private'
-  image?: string
-  replyTo?: string
-}
+import { supabase } from '../../../utils/supabase'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' })
+    return res.status(405).json({ success: false, error: 'Method not allowed' })
   }
 
   try {
-    // Initialize database
-    initDb()
-    
-    const { limit = '20', offset = '0' } = req.query
+    const { page = '1', limit = '20', wallet_address } = req.query
+    const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
-    const offsetNum = parseInt(offset as string)
+    const offset = (pageNum - 1) * limitNum
 
-    // Get posts from database
-    const dbPosts = getPosts(limitNum, offsetNum)
-    
-    // Convert to API format
-    const posts: Post[] = dbPosts.map((dbPost: any) => ({
-      id: dbPost.id.toString(),
-      author: dbPost.author,
-      content: dbPost.content,
-      timestamp: dbPost.created_at,
-      encrypted: false,
-      likes: dbPost.likes,
-      replies: dbPost.replies,
-      reposts: dbPost.reposts,
-      views: 0, // Views not implemented yet
-      visibility: dbPost.visibility as 'public' | 'followers' | 'private',
-      image: dbPost.image || undefined,
-      replyTo: dbPost.reply_to_id?.toString()
-    }))
+    // Build query for posts with author info and stats
+    let query = supabase
+      .from('posts')
+      .select(`
+        *,
+        author:users!author_id(
+          id,
+          pseudonym,
+          display_name,
+          avatar_url
+        ),
+        likes_count:likes(count),
+        reposts_count:reposts(count),
+        replies_count:replies(count)
+      `)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limitNum - 1)
 
-    // If no posts, return empty feed (no fake posts)
-    if (posts.length === 0) {
-      return res.status(200).json({
-        success: true,
-        posts: [],
-        total: 0,
-        hasMore: false,
-        message: 'Feed is empty - create your first post!'
-      })
+    // If wallet_address provided, filter to show posts from followed users + public posts
+    if (wallet_address) {
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('wallet_address', wallet_address.toString().toLowerCase())
+        .single()
+
+      if (user) {
+        // Get followed user IDs
+        const { data: following } = await supabase
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', user.id)
+
+        const followingIds = following?.map(f => f.following_id) || []
+        
+        // Filter posts: from followed users OR public posts from anyone
+        query = query.or(`author_id.in.(${followingIds.join(',')}),is_private.eq.false`)
+      } else {
+        // If user not found, show only public posts
+        query = query.eq('is_private', false)
+      }
+    } else {
+      // No wallet provided, show only public posts
+      query = query.eq('is_private', false)
     }
 
-    return res.status(200).json({
-      success: true,
-      posts: posts,
-      total: posts.length,
-      hasMore: posts.length === limitNum,
-      message: 'Feed retrieved successfully'
+    const { data: posts, error } = await query
+
+    if (error) {
+      console.error('Supabase error:', error)
+      return res.status(500).json({ success: false, error: 'Failed to fetch posts' })
+    }
+
+    // Transform data to match expected format
+    const transformedPosts = posts?.map(post => ({
+      id: post.id,
+      author: post.author.display_name || post.author.pseudonym,
+      content: post.content,
+      timestamp: post.created_at,
+      image: post.image_url,
+      likes: post.likes_count?.[0]?.count || 0,
+      reposts: post.reposts_count?.[0]?.count || 0,
+      replies: post.replies_count?.[0]?.count || 0,
+      views: 0, // TODO: Implement view tracking
+      is_private: post.is_private,
+      author_display_name: post.author.display_name,
+      author_avatar: post.author.avatar_url,
+      author_pseudonym: post.author.pseudonym
+    })) || []
+
+    console.log(`✅ Feed loaded: ${transformedPosts.length} posts`)
+    return res.status(200).json({ 
+      success: true, 
+      posts: transformedPosts,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        hasMore: transformedPosts.length === limitNum
+      }
     })
 
   } catch (error) {
-    console.error('Feed error:', error)
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve feed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    })
+    console.error('API error:', error)
+    return res.status(500).json({ success: false, error: 'Internal server error' })
   }
 } 

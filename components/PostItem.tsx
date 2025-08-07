@@ -10,12 +10,37 @@ import {
   Share,
   Bookmark
 } from 'lucide-react'
-import { Post } from '../pages/api/posts/create'
+import { Post as SupabasePost } from '../utils/supabase'
 import { CreatePost } from './CreatePost'
-import { walletAuth } from '../utils/walletAuth'
+import { useUniversalWallet } from '../hooks/useUniversalWallet'
+
+// Unified post type that works with both API formats
+interface UnifiedPost {
+  id: string
+  content: string
+  created_at?: string
+  timestamp?: string
+  image_url?: string
+  image?: string
+  is_private?: boolean
+  likes_count?: number
+  reposts_count?: number
+  replies_count?: number
+  likes?: number
+  reposts?: number
+  replies?: number
+  author?: {
+    pseudonym: string
+    display_name?: string
+    avatar_url?: string
+  }
+  author_display_name?: string
+  author_pseudonym?: string
+  author_avatar?: string
+}
 
 export interface PostItemProps {
-  post: Post
+  post: UnifiedPost
   onLike?: (postId: string) => void
   onRepost?: (postId: string) => void
   onReply?: (postId: string) => void
@@ -33,24 +58,57 @@ export const PostItem: React.FC<PostItemProps> = ({
   const [isReposted, setIsReposted] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
   const [showReplyForm, setShowReplyForm] = useState(false)
-  const [replies, setReplies] = useState<Post[]>([])
+  const [replies, setReplies] = useState<UnifiedPost[]>([])
+
+  const { account, isConnected } = useUniversalWallet()
+
+  // Helper functions to get post data regardless of format
+  const getAuthorName = () => {
+    if (post.author?.display_name) return post.author.display_name
+    if (post.author_display_name) return post.author_display_name
+    if (post.author?.pseudonym) return post.author.pseudonym
+    if (post.author_pseudonym) return post.author_pseudonym
+    return 'Unknown'
+  }
+
+  const getAuthorPseudonym = () => {
+    if (post.author?.pseudonym) return post.author.pseudonym
+    if (post.author_pseudonym) return post.author_pseudonym
+    return 'unknown'
+  }
+
+  const getAuthorAvatar = () => {
+    if (post.author?.avatar_url) return post.author.avatar_url
+    if (post.author_avatar) return post.author_avatar
+    return null
+  }
+
+  const getTimestamp = () => {
+    return post.created_at || post.timestamp || new Date().toISOString()
+  }
+
+  const getImageUrl = () => {
+    return post.image_url || post.image || null
+  }
+
+  const getLikesCount = () => {
+    return post.likes_count || post.likes || 0
+  }
+
+  const getRepostsCount = () => {
+    return post.reposts_count || post.reposts || 0
+  }
+
+  const getRepliesCount = () => {
+    return post.replies_count || post.replies || 0
+  }
 
   const handleLike = async () => {
     try {
-      const currentProfile = walletAuth.getCurrentProfile()
-      console.log('Current profile:', currentProfile)
-      
-      if (!currentProfile) {
-        console.error('No user logged in')
+      if (!isConnected || !account) {
         alert('Please connect your wallet first')
         return
       }
-
-      console.log('Sending like request:', {
-        postId: post.id,
-        action: 'like',
-        userId: currentProfile.walletAddress
-      })
 
       const response = await fetch('/api/posts/interact', {
         method: 'POST',
@@ -60,12 +118,11 @@ export const PostItem: React.FC<PostItemProps> = ({
         body: JSON.stringify({
           postId: post.id,
           action: 'like',
-          userId: currentProfile.walletAddress
+          userId: account
         })
       })
 
       const result = await response.json()
-      console.log('Like response:', result)
 
       if (response.ok) {
         setIsLiked(!isLiked)
@@ -82,20 +139,10 @@ export const PostItem: React.FC<PostItemProps> = ({
 
   const handleRepost = async () => {
     try {
-      const currentProfile = walletAuth.getCurrentProfile()
-      console.log('Current profile for repost:', currentProfile)
-      
-      if (!currentProfile) {
-        console.error('No user logged in')
+      if (!isConnected || !account) {
         alert('Please connect your wallet first')
         return
       }
-
-      console.log('Sending repost request:', {
-        postId: post.id,
-        action: 'repost',
-        userId: currentProfile.walletAddress
-      })
 
       const response = await fetch('/api/posts/interact', {
         method: 'POST',
@@ -105,12 +152,11 @@ export const PostItem: React.FC<PostItemProps> = ({
         body: JSON.stringify({
           postId: post.id,
           action: 'repost',
-          userId: currentProfile.walletAddress
+          userId: account
         })
       })
 
       const result = await response.json()
-      console.log('Repost response:', result)
 
       if (response.ok) {
         setIsReposted(!isReposted)
@@ -128,7 +174,7 @@ export const PostItem: React.FC<PostItemProps> = ({
   const handleReply = () => {
     setShowReplyForm(!showReplyForm)
     if (!showReplies) {
-      loadReplies()
+      setShowReplies(true)
     }
   }
 
@@ -139,166 +185,176 @@ export const PostItem: React.FC<PostItemProps> = ({
       
       if (result.success) {
         setReplies(result.replies)
-        setShowReplies(true)
       }
     } catch (error) {
       console.error('Error loading replies:', error)
     }
   }
 
-  const handleReplyCreated = (newReply: Post) => {
+  const handleReplyCreated = (newReply: UnifiedPost) => {
     setReplies(prev => [newReply, ...prev])
     setShowReplyForm(false)
-    // Update the post's reply count locally
-    post.replies = (post.replies || 0) + 1
     onReply?.(post.id)
   }
 
   const formatTimeAgo = (timestamp: string) => {
-    console.log('Raw timestamp:', timestamp)
-    
     const now = new Date()
     const postTime = new Date(timestamp)
+    const diffInSeconds = Math.floor((now.getTime() - postTime.getTime()) / 1000)
     
-    console.log('Now:', now.toISOString())
-    console.log('Post time:', postTime.toISOString())
-    console.log('Post time valid:', !isNaN(postTime.getTime()))
-    
-    if (isNaN(postTime.getTime())) {
-      console.error('Invalid timestamp:', timestamp)
-      return 'now'
-    }
-    
-    const diffInMinutes = Math.floor((now.getTime() - postTime.getTime()) / (1000 * 60))
-    console.log('Diff in minutes:', diffInMinutes)
-    
-    if (diffInMinutes < 1) return 'now'
-    if (diffInMinutes < 60) return `${diffInMinutes}m`
-    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h`
-    return `${Math.floor(diffInMinutes / 1440)}d`
+    if (diffInSeconds < 60) return `${diffInSeconds}s`
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h`
+    return `${Math.floor(diffInSeconds / 86400)}d`
+  }
+
+  const getInitials = (name: string) => {
+    return name.split(' ').map(word => word.charAt(0)).join('').toUpperCase()
   }
 
   return (
-    <motion.div
+    <motion.div 
+      className={`bg-dark-800 border border-dark-700 rounded-2xl p-6 ${className}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`bg-dark-800 border border-dark-700 rounded-2xl p-6 ${className}`}
+      transition={{ duration: 0.3 }}
     >
       {/* Post Header */}
-      <div className="flex items-start space-x-4 mb-4">
-        <div className="w-12 h-12 bg-gradient-to-r from-crypto-blue to-crypto-purple rounded-full flex items-center justify-center">
-          <span className="text-white font-semibold text-lg">
-            {post.author.charAt(0).toUpperCase()}
-          </span>
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-2 mb-1">
-            <span className="text-white font-semibold">{post.author}</span>
-            <span className="text-dark-400 text-sm">•</span>
-            <span className="text-dark-400 text-sm">{formatTimeAgo(post.timestamp)}</span>
-          </div>
-          
-          {/* Post Content */}
-          <div className="text-white mb-4 leading-relaxed">
-            {post.content}
-          </div>
-          
-          {/* Post Image */}
-          {post.image && (
-            <div className="mb-4">
-              <img 
-                src={post.image} 
-                alt="Post content"
-                className="w-full max-w-md rounded-xl object-cover"
-              />
+      <div className="flex items-start space-x-3 mb-4">
+        {/* Avatar */}
+        <div className="flex-shrink-0">
+          {post.author?.avatar_url ? (
+            <img 
+              src={post.author.avatar_url} 
+              alt={post.author.pseudonym}
+              className="w-12 h-12 rounded-full"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-crypto-blue to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+              {getInitials(getAuthorName())}
             </div>
           )}
-          
-          {/* Post Stats */}
-          <div className="flex items-center justify-between text-dark-400 text-sm mb-4">
-            <div className="flex items-center space-x-4">
-              <span>{post.likes} likes</span>
-              <span>{post.reposts} recircles</span>
-              <span>{post.replies} replies</span>
-            </div>
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-6">
-              {/* Reply Button */}
-              <button
-                onClick={handleReply}
-                className="flex items-center space-x-2 text-dark-400 hover:text-crypto-blue transition-colors"
-              >
-                <MessageCircle size={20} />
-                <span className="text-sm">Reply</span>
-              </button>
-              
-              {/* Like Button */}
-              <button
-                onClick={handleLike}
-                className={`flex items-center space-x-2 transition-colors ${
-                  isLiked ? 'text-red-400' : 'text-dark-400 hover:text-red-400'
-                }`}
-              >
-                <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
-                <span className="text-sm">Like</span>
-              </button>
-              
-              {/* Recircle Button */}
-              <button
-                onClick={handleRepost}
-                className={`flex items-center space-x-2 transition-colors ${
-                  isReposted ? 'text-green-400' : 'text-dark-400 hover:text-green-400'
-                }`}
-              >
-                <Repeat2 size={20} />
-                <span className="text-sm">Recircle</span>
-              </button>
-              
-              {/* Share Button */}
-              <button className="flex items-center space-x-2 text-dark-400 hover:text-crypto-blue transition-colors">
-                <Share size={20} />
-                <span className="text-sm">Share</span>
-              </button>
-            </div>
-            
-            <button className="text-dark-400 hover:text-white transition-colors">
-              <MoreHorizontal size={20} />
+        </div>
+
+        {/* User Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={() => window.location.href = `/profile/${getAuthorPseudonym()}`}
+              className="font-semibold text-white hover:text-crypto-blue transition-colors cursor-pointer"
+            >
+              {getAuthorName()}
             </button>
+            <button 
+              onClick={() => window.location.href = `/profile/${getAuthorPseudonym()}`}
+              className="text-dark-400 hover:text-crypto-blue transition-colors cursor-pointer"
+            >
+              @{getAuthorPseudonym()}
+            </button>
+            <span className="text-dark-400">·</span>
+            <span className="text-dark-400">{formatTimeAgo(getTimestamp())}</span>
           </div>
         </div>
+
+        {/* More Options */}
+        <button className="text-dark-400 hover:text-white transition-colors">
+          <MoreHorizontal size={20} />
+        </button>
       </div>
-      
-      {/* Reply Form */}
-      {showReplyForm && (
-        <div className="border-t border-dark-700 pt-4 mb-4">
-          <CreatePost
-            replyTo={post.id}
-            parentPost={post}
-            onPostCreated={handleReplyCreated}
-            onCancel={() => setShowReplyForm(false)}
+
+      {/* Post Content */}
+      <div className="mb-4">
+        <p className="text-white text-lg leading-relaxed whitespace-pre-wrap">
+          {post.content}
+        </p>
+      </div>
+
+      {/* Post Image */}
+      {getImageUrl() && (
+        <div className="mb-4">
+          <img 
+            src={getImageUrl()!} 
+            alt="Post content"
+            className="w-full rounded-lg max-h-96 object-cover"
           />
         </div>
       )}
-      
-      {/* Replies */}
-      {showReplies && replies.length > 0 && (
-        <div className="border-t border-dark-700 pt-4">
-          <div className="space-y-4">
-            {replies.map((reply) => (
-              <div key={reply.id} className="ml-8 border-l-2 border-dark-600 pl-4">
-                <PostItem
-                  post={reply}
-                  onLike={onLike}
-                  onRepost={onRepost}
-                  onReply={onReply}
-                />
-              </div>
-            ))}
+
+      {/* Post Stats */}
+      <div className="flex items-center space-x-6 text-dark-400 text-sm mb-4">
+        <span>{getRepliesCount()} replies</span>
+        <span>{getRepostsCount()} reposts</span>
+        <span>{getLikesCount()} likes</span>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex items-center justify-between pt-4 border-t border-dark-700">
+        {/* Reply */}
+        <button
+          onClick={handleReply}
+          className="flex items-center space-x-2 text-dark-400 hover:text-crypto-blue transition-colors"
+        >
+          <MessageCircle size={20} />
+          <span>Reply</span>
+        </button>
+
+        {/* Repost */}
+        <button
+          onClick={handleRepost}
+          className={`flex items-center space-x-2 transition-colors ${
+            isReposted ? 'text-green-400' : 'text-dark-400 hover:text-green-400'
+          }`}
+        >
+          <Repeat2 size={20} />
+          <span>Repost</span>
+        </button>
+
+        {/* Like */}
+        <button
+          onClick={handleLike}
+          className={`flex items-center space-x-2 transition-colors ${
+            isLiked ? 'text-red-400' : 'text-dark-400 hover:text-red-400'
+          }`}
+        >
+          <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
+          <span>Like</span>
+        </button>
+
+        {/* Share */}
+        <button className="flex items-center space-x-2 text-dark-400 hover:text-crypto-blue transition-colors">
+          <Share size={20} />
+          <span>Share</span>
+        </button>
+
+        {/* Bookmark */}
+        <button className="flex items-center space-x-2 text-dark-400 hover:text-crypto-blue transition-colors">
+          <Bookmark size={20} />
+          <span>Bookmark</span>
+        </button>
+      </div>
+
+              {/* Reply Form */}
+        {showReplyForm && (
+          <div className="mt-4 pt-4 border-t border-dark-700">
+            <CreatePost
+              replyTo={post.id}
+              parentPost={post as any}
+              onPostCreated={handleReplyCreated}
+              onCancel={() => setShowReplyForm(false)}
+            />
           </div>
+        )}
+
+      {/* Replies */}
+      {showReplies && (
+        <div className="mt-4 space-y-4">
+          {replies.map((reply) => (
+            <PostItem
+              key={reply.id}
+              post={reply}
+              className="ml-8 border-l-2 border-dark-700 pl-4"
+            />
+          ))}
         </div>
       )}
     </motion.div>

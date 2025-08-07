@@ -30,39 +30,12 @@ const TypewriterText: React.FC<{ text: string; className?: string }> = ({ text, 
 
 export default function LandingPage() {
   const [mounted, setMounted] = useState(false)
-  const [showContent, setShowContent] = useState(false)
 
   useEffect(() => {
     setMounted(true)
-    
-    // Show loading for 2 seconds, then reveal content
-    const timer = setTimeout(() => {
-      setShowContent(true)
-    }, 2000)
-
-    return () => clearTimeout(timer)
   }, [])
 
   if (!mounted) return null
-
-  // Loading screen
-  if (!showContent) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          {/* Loading Circle */}
-          <div className="w-32 h-32 md:w-40 md:h-40 lg:w-48 lg:h-48 mx-auto border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin relative mb-8">
-            {/* Inner glow effect */}
-            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-400/10 to-purple-600/10 blur-sm"></div>
-            {/* Outer ring */}
-            <div className="absolute inset-0 rounded-full border border-cyan-400/20"></div>
-          </div>
-          
-
-        </div>
-      </div>
-    )
-  }
 
   return (
     <motion.div 
@@ -87,12 +60,29 @@ export default function LandingPage() {
         
         {/* Minimalist Hero Section */}
         <div className="text-center max-w-4xl mx-auto">
+          {/* Circle Logo */}
+          <motion.div
+            className="mb-8 flex justify-center"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+          >
+            <Image
+              src="/circle.png"
+              alt="Circle Logo"
+              width={120}
+              height={120}
+              className="w-24 h-24 md:w-32 md:h-32 lg:w-40 lg:h-40"
+              priority
+            />
+          </motion.div>
+
           {/* Main headline - CIRCLE */}
           <motion.h1 
             className="text-6xl md:text-8xl lg:text-9xl font-extralight text-cyan-400 mb-8 tracking-tighter leading-[0.85]"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.5, ease: "easeOut" }}
+            transition={{ duration: 1.5, ease: "easeOut", delay: 0.3 }}
           >
             CIRCLE
           </motion.h1>

@@ -12,6 +12,7 @@
   "dependencies": {
     "@lit-protocol/contracts-sdk": "^7.2.1",
     "@lit-protocol/lit-node-client": "^7.2.1",
+    "@supabase/supabase-js": "^2.53.1",
     "@walletconnect/modal": "^2.7.0",
     "@walletconnect/web3wallet": "^1.16.1",
     "@xmtp/xmtp-js": "^13.0.4",
@@ -45,11 +46,3 @@
     "typescript": "^5.3.3"
   }
 }
-
- 
- 
- 
- 
- 
- 
-

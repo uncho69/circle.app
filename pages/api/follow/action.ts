@@ -1,125 +1,99 @@
 import { NextApiRequest, NextApiResponse } from 'next'
-
-export interface FollowActionRequest {
-  follower: string // pseudonym of who is following
-  following: string // pseudonym of who is being followed
-  action: 'follow' | 'unfollow'
-}
-
-export interface FollowRelationship {
-  follower: string
-  following: string
-  followedAt: string
-}
-
-// Simple in-memory storage for demo
-let followRelationships: FollowRelationship[] = []
+import { supabase } from '../../../utils/supabase'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
+    return res.status(405).json({ success: false, error: 'Method not allowed' })
   }
 
   try {
-    const { follower, following, action }: FollowActionRequest = req.body
+    const { action, follower, following } = req.body
 
-    // Validation
-    if (!follower || !following || !action) {
-      return res.status(400).json({ error: 'Follower, following, and action are required' })
+    if (!action || !follower || !following) {
+      return res.status(400).json({ success: false, error: 'Action, follower, and following are required' })
     }
 
-    if (follower === following) {
-      return res.status(400).json({ error: 'Cannot follow yourself' })
+    // Get user IDs by pseudonyms
+    const { data: followerUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('pseudonym', follower)
+      .single()
+
+    const { data: followingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('pseudonym', following)
+      .single()
+
+    if (!followerUser || !followingUser) {
+      return res.status(404).json({ success: false, error: 'User not found' })
     }
 
-    if (!['follow', 'unfollow'].includes(action)) {
-      return res.status(400).json({ error: 'Action must be follow or unfollow' })
-    }
+    if (action === 'check') {
+      // Check if already following
+      const { data: existingFollow } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('follower_id', followerUser.id)
+        .eq('following_id', followingUser.id)
+        .single()
 
-    // Check if relationship already exists
-    const existingRelationship = followRelationships.find(
-      rel => rel.follower === follower && rel.following === following
-    )
+      return res.status(200).json({ 
+        success: true, 
+        isFollowing: !!existingFollow 
+      })
+    }
 
     if (action === 'follow') {
-      if (existingRelationship) {
-        return res.status(400).json({ error: 'Already following this user' })
+      // Check if already following
+      const { data: existingFollow } = await supabase
+        .from('follows')
+        .select('id')
+        .eq('follower_id', followerUser.id)
+        .eq('following_id', followingUser.id)
+        .single()
+
+      if (existingFollow) {
+        return res.status(409).json({ success: false, error: 'Already following' })
       }
 
-      // Create new follow relationship
-      const newRelationship: FollowRelationship = {
-        follower,
-        following,
-        followedAt: new Date().toISOString()
+      // Create follow relationship
+      const { error } = await supabase
+        .from('follows')
+        .insert({
+          follower_id: followerUser.id,
+          following_id: followingUser.id
+        })
+
+      if (error) {
+        console.error('Follow error:', error)
+        return res.status(500).json({ success: false, error: 'Failed to follow' })
       }
 
-      followRelationships.push(newRelationship)
-      console.log(`👥 ${follower} started following ${following}`)
-
-      return res.status(200).json({
-        success: true,
-        action: 'followed',
-        relationship: newRelationship,
-        message: `Now following ${following}`
-      })
-
-    } else if (action === 'unfollow') {
-      if (!existingRelationship) {
-        return res.status(400).json({ error: 'Not following this user' })
-      }
-
-      // Remove follow relationship
-      followRelationships = followRelationships.filter(
-        rel => !(rel.follower === follower && rel.following === following)
-      )
-
-      console.log(`👥 ${follower} unfollowed ${following}`)
-
-      return res.status(200).json({
-        success: true,
-        action: 'unfollowed',
-        message: `Unfollowed ${following}`
-      })
+      return res.status(200).json({ success: true, message: 'Followed successfully' })
     }
 
+    if (action === 'unfollow') {
+      // Remove follow relationship
+      const { error } = await supabase
+        .from('follows')
+        .delete()
+        .eq('follower_id', followerUser.id)
+        .eq('following_id', followingUser.id)
+
+      if (error) {
+        console.error('Unfollow error:', error)
+        return res.status(500).json({ success: false, error: 'Failed to unfollow' })
+      }
+
+      return res.status(200).json({ success: true, message: 'Unfollowed successfully' })
+    }
+
+    return res.status(400).json({ success: false, error: 'Invalid action' })
+
   } catch (error) {
-    console.error('Follow action error:', error)
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to process follow action',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    })
+    console.error('API error:', error)
+    return res.status(500).json({ success: false, error: 'Internal server error' })
   }
-}
-
-// Helper functions to get follow stats
-export function getFollowStats(pseudonym: string): {
-  followersCount: number
-  followingCount: number
-  followers: string[]
-  following: string[]
-} {
-  const followers = followRelationships
-    .filter(rel => rel.following === pseudonym)
-    .map(rel => rel.follower)
-
-  const following = followRelationships
-    .filter(rel => rel.follower === pseudonym)
-    .map(rel => rel.following)
-
-  return {
-    followersCount: followers.length,
-    followingCount: following.length,
-    followers,
-    following
-  }
-}
-
-export function isFollowing(follower: string, following: string): boolean {
-  return followRelationships.some(
-    rel => rel.follower === follower && rel.following === following
-  )
-}
-
-// Export relationships for access from other endpoints
-export { followRelationships } 
+} 

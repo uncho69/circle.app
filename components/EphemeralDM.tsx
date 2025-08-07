@@ -10,7 +10,7 @@ import {
   EyeOff,
   AlertTriangle
 } from 'lucide-react'
-import { walletAuth } from '../utils/walletAuth'
+import { useUniversalWallet } from '../hooks/useUniversalWallet'
 
 export interface EphemeralDMProps {
   className?: string
@@ -18,24 +18,21 @@ export interface EphemeralDMProps {
 
 interface DMMessage {
   id: string
-  from: string
-  to: string
   content: string
-  timestamp: string
-  read: boolean
-  autoDeleteAfter: number // seconds after reading
-  expiresAt?: string
+  sender_pseudonym: string
+  sender_display_name: string
+  created_at: string
+  is_own: boolean
 }
 
 interface DMConversation {
-  pseudonym: string
-  lastMessage: DMMessage | null
-  unreadCount: number
+  conversation_id: string
+  other_user_pseudonym: string
+  other_user_display_name: string
+  last_message: string | null
+  last_message_time: string | null
+  unread_count: number
 }
-
-// Simple in-memory storage for demo
-let messages: DMMessage[] = []
-let messageIdCounter = 1
 
 export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
   const [currentUser, setCurrentUser] = useState<string | null>(null)
@@ -47,180 +44,124 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
   const [autoDeleteTime, setAutoDeleteTime] = useState(30) // seconds (0 = after reading)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  const { account } = useUniversalWallet()
+
   useEffect(() => {
-    // Get current user
-    const profile = walletAuth.getCurrentProfile()
-    if (profile) {
-      setCurrentUser(profile.pseudonym)
-      loadConversations(profile.pseudonym)
+    if (account) {
+      // Get current user's pseudonym
+      fetch(`/api/users/get?wallet_address=${account}`)
+        .then(res => res.json())
+        .then(result => {
+          if (result.success) {
+            setCurrentUser(result.user.pseudonym)
+            loadConversations(account)
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching current user:', error)
+        })
     }
-  }, [])
+  }, [account])
 
   useEffect(() => {
     // Auto-scroll to bottom when new messages arrive
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [conversationMessages])
 
+  // Poll for new messages every 5 seconds
   useEffect(() => {
-    // Auto-delete messages after reading or timer expiry
+    if (!account) return
+
     const interval = setInterval(() => {
-      const now = Date.now()
-      const initialCount = messages.length
-      
-      messages = messages.filter(msg => {
-        if (msg.expiresAt && new Date(msg.expiresAt).getTime() <= now) {
-          console.log(`🗑️ Auto-deleted ephemeral message from ${msg.from} (${msg.autoDeleteAfter === 0 ? 'after reading' : msg.autoDeleteAfter + 's timer'})`)
-          return false
-        }
-        return true
-      })
-      
-      // If messages were deleted, update UI
-      if (messages.length < initialCount) {
-        loadConversations(currentUser!)
-        
-        if (activeConversation && currentUser) {
-          loadConversationMessages(currentUser, activeConversation)
-        }
+      loadConversations(account)
+      if (activeConversation) {
+        loadConversationMessages(account, activeConversation)
       }
-    }, 1000)
+    }, 5000)
 
     return () => clearInterval(interval)
-  }, [activeConversation, currentUser])
+  }, [account, activeConversation])
 
-  const loadConversations = (userPseudonym: string) => {
-    // Get all conversations for current user
-    const userMessages = messages.filter(msg => 
-      msg.from === userPseudonym || msg.to === userPseudonym
-    )
-
-    const conversationMap = new Map<string, DMConversation>()
-
-    userMessages.forEach(msg => {
-      const otherUser = msg.from === userPseudonym ? msg.to : msg.from
+  const loadConversations = async (walletAddress: string) => {
+    try {
+      const response = await fetch(`/api/messages/conversations?wallet_address=${walletAddress}`)
+      const result = await response.json()
       
-      if (!conversationMap.has(otherUser)) {
-        conversationMap.set(otherUser, {
-          pseudonym: otherUser,
-          lastMessage: null,
-          unreadCount: 0
-        })
+      if (result.success) {
+        setConversations(result.conversations)
       }
-
-      const conversation = conversationMap.get(otherUser)!
-      
-      if (!conversation.lastMessage || new Date(msg.timestamp) > new Date(conversation.lastMessage.timestamp)) {
-        conversation.lastMessage = msg
-      }
-
-      if (msg.to === userPseudonym && !msg.read) {
-        conversation.unreadCount++
-      }
-    })
-
-    setConversations(Array.from(conversationMap.values()).sort((a, b) => {
-      const aTime = a.lastMessage ? new Date(a.lastMessage.timestamp).getTime() : 0
-      const bTime = b.lastMessage ? new Date(b.lastMessage.timestamp).getTime() : 0
-      return bTime - aTime
-    }))
+    } catch (error) {
+      console.error('Error loading conversations:', error)
+    }
   }
 
-  const loadConversationMessages = (userPseudonym: string, otherUser: string) => {
-    const convMessages = messages.filter(msg => 
-      (msg.from === userPseudonym && msg.to === otherUser) ||
-      (msg.from === otherUser && msg.to === userPseudonym)
-    ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-
-    // Mark incoming messages as read and set expiry
-    convMessages.forEach(msg => {
-      if (msg.to === userPseudonym && !msg.read) {
-        msg.read = true
-        
-        if (msg.autoDeleteAfter === 0) {
-          // Delete immediately after reading
-          msg.expiresAt = new Date(Date.now() + 1000).toISOString() // 1 second delay for UX
-          console.log(`👁️ Message from ${msg.from} marked as read, will delete after reading`)
-        } else {
-          // Delete after specified time
-          msg.expiresAt = new Date(Date.now() + msg.autoDeleteAfter * 1000).toISOString()
-          console.log(`👁️ Message from ${msg.from} marked as read, will delete in ${msg.autoDeleteAfter}s`)
-        }
+  const loadConversationMessages = async (walletAddress: string, otherUserPseudonym: string) => {
+    try {
+      const response = await fetch(`/api/messages/get?wallet_address=${walletAddress}&other_user_pseudonym=${otherUserPseudonym}`)
+      const result = await response.json()
+      
+      if (result.success) {
+        setConversationMessages(result.messages)
       }
-    })
-
-    setConversationMessages(convMessages)
-    
-    // Update conversations list
-    loadConversations(userPseudonym)
+    } catch (error) {
+      console.error('Error loading conversation messages:', error)
+    }
   }
 
   const sendMessage = async () => {
-    if (!currentUser || !newMessage.trim()) return
+    if (!account || !newMessage.trim()) return
 
     let recipient = activeConversation || newRecipient
     if (!recipient) return
-
-    // Check if recipient is a wallet address (starts with 0x and 42 chars)
-    if (recipient.startsWith('0x') && recipient.length === 42) {
-      // Try to find pseudonym by wallet address
-      const profiles = walletAuth.getAllProfiles()
-      const profile = profiles.find(p => p.walletAddress.toLowerCase() === recipient.toLowerCase())
-      
-      if (profile) {
-        recipient = profile.pseudonym
-        console.log(`🔍 Found user ${recipient} for wallet address ${newRecipient}`)
-      } else {
-        alert(`❌ No user found with wallet address ${recipient}.\nMake sure they have registered on Decentra.`)
-        return
-      }
-    }
-
-    // Validate that recipient exists (either by pseudonym or found via address)
-    const allProfiles = walletAuth.getAllProfiles()
-    const recipientExists = allProfiles.some(p => p.pseudonym === recipient)
-    
-    if (!recipientExists && recipient !== currentUser) {
-      alert(`❌ User "${recipient}" not found.\nMake sure they have registered on Decentra.`)
-      return
-    }
 
     if (recipient === currentUser) {
       alert(`❌ You cannot send messages to yourself.`)
       return
     }
 
-    const message: DMMessage = {
-      id: `dm_${messageIdCounter++}`,
-      from: currentUser,
-      to: recipient,
-      content: newMessage.trim(),
-      timestamp: new Date().toISOString(),
-      read: false,
-      autoDeleteAfter: autoDeleteTime,
-      expiresAt: autoDeleteTime === 0 ? undefined : new Date(Date.now() + autoDeleteTime * 1000).toISOString()
-    }
+    try {
+      const response = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender_wallet: account,
+          recipient_pseudonym: recipient,
+          content: newMessage.trim()
+        })
+      })
 
-    messages.push(message)
-    setNewMessage('')
-    setNewRecipient('')
+      const result = await response.json()
+      
+      if (result.success) {
+        setNewMessage('')
+        setNewRecipient('')
+        
+        console.log(`💬 Sent message to ${recipient}`)
 
-    console.log(`💬 Sent ephemeral DM to ${recipient} (auto-delete: ${autoDeleteTime}s)`)
-
-    // Refresh conversations and messages
-    loadConversations(currentUser)
-    if (activeConversation) {
-      loadConversationMessages(currentUser, activeConversation)
-    } else {
-      // Open the conversation we just started
-      setActiveConversation(recipient)
-      loadConversationMessages(currentUser, recipient)
+        // Refresh conversations and messages
+        loadConversations(account)
+        if (activeConversation) {
+          loadConversationMessages(account, activeConversation)
+        } else {
+          // Open the conversation we just started
+          setActiveConversation(recipient)
+          loadConversationMessages(account, recipient)
+        }
+      } else {
+        alert(`❌ Failed to send message: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
+      alert('❌ Failed to send message. Please try again.')
     }
   }
 
-  const openConversation = (pseudonym: string) => {
-    setActiveConversation(pseudonym)
-    if (currentUser) {
-      loadConversationMessages(currentUser, pseudonym)
+  const openConversation = (otherUserPseudonym: string) => {
+    setActiveConversation(otherUserPseudonym)
+    if (account) {
+      loadConversationMessages(account, otherUserPseudonym)
     }
   }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import Image from 'next/image'
-import { Home, MessageCircle, CreditCard, Users, Settings, Search, Plus, Lock, ShoppingBag } from 'lucide-react'
+import { Home, MessageCircle, CreditCard, Users, Settings, Search, Plus, Lock } from 'lucide-react'
 import { TorStatus } from '../components/TorStatus'
 import { ZKProofGenerator } from '../components/ZKProofGenerator'
 import { KillswitchControls } from '../components/KillswitchControls'
@@ -17,9 +17,11 @@ import { NotificationSystem } from '../components/NotificationSystem'
 import { PrivateGroups } from '../components/PrivateGroups'
 import { TorIndicator } from '../components/TorIndicator'
 import { WalletIndicator } from '../components/WalletIndicator'
-import { Marketplace } from '../components/Marketplace'
+import { OnboardingModal } from '../components/OnboardingModal'
+
 import { walletAuth } from '../utils/walletAuth'
 import { useTor } from '../hooks/useTor'
+import { useUniversalWallet } from '../hooks/useUniversalWallet'
 
 export default function AppPage() {
   const [activeTab, setActiveTab] = useState(0)
@@ -32,9 +34,13 @@ export default function AppPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showSearchResults, setShowSearchResults] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [pendingWalletAddress, setPendingWalletAddress] = useState<string | null>(null)
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false)
 
   // Initialize Tor connection
   const { connect: connectTor, status: torStatus } = useTor()
+  const { isConnected, account } = useUniversalWallet()
 
   // Search functionality
   const handleSearch = async (query: string) => {
@@ -61,8 +67,8 @@ export default function AppPage() {
 
   const handleSearchResultClick = (result: any) => {
     if (result.type === 'user') {
-      setViewingProfile(result.pseudonym)
-      setActiveTab(3) // Profile tab
+      // Navigate to user profile page
+      window.location.href = `/profile/${result.pseudonym}`
     } else if (result.type === 'post') {
       // Scroll to post or open in modal
       console.log('Post clicked:', result.id)
@@ -95,6 +101,21 @@ export default function AppPage() {
       console.error('❌ Failed to create demo profile:', error)
     }
     
+    // Update currentUser when wallet connects
+    if (isConnected && account) {
+      const profile = walletAuth.getProfile(account)
+      if (profile) {
+        setCurrentUser(profile.pseudonym)
+        console.log('✅ Current user set to:', profile.pseudonym)
+      } else {
+        // If no profile exists, create one with a simple pseudonym
+        const pseudonym = `user_${account.substring(0, 6)}`
+        const newProfile = walletAuth.createProfile(account, pseudonym)
+        setCurrentUser(newProfile.pseudonym)
+        console.log('✅ New profile created for:', newProfile.pseudonym)
+      }
+    }
+    
     // Initialize Tor connection immediately when user enters the network
     const initializeTor = async () => {
       console.log('🔗 FORCING Tor connection on app startup...')
@@ -123,17 +144,70 @@ export default function AppPage() {
         setIsCreatePostModalOpen(true)
       }
     }
-
+    
     window.addEventListener('keydown', handleKeyboard)
     return () => window.removeEventListener('keydown', handleKeyboard)
-  }, [connectTor])
+  }, [])
+  
+  // Monitor wallet connection changes
+  useEffect(() => {
+    if (isConnected && account) {
+      // Try to get user from Supabase first
+      const fetchUser = async () => {
+        try {
+          const response = await fetch(`/api/users/get?wallet_address=${account}`)
+          const result = await response.json()
+          
+          if (result.success && result.user) {
+            setCurrentUser(result.user.pseudonym)
+            console.log('✅ User found in Supabase:', result.user.pseudonym)
+          } else if (!onboardingCompleted) {
+            // Show onboarding modal for new user
+            setPendingWalletAddress(account)
+            setShowOnboarding(true)
+          }
+        } catch (error) {
+          console.error('Error fetching/creating user:', error)
+          // Fallback to local auth
+          const profile = walletAuth.getProfile(account)
+          if (profile) {
+            setCurrentUser(profile.pseudonym)
+          } else {
+            const pseudonym = `user_${account.substring(0, 6)}`
+            const newProfile = walletAuth.createProfile(account, pseudonym)
+            setCurrentUser(newProfile.pseudonym)
+          }
+        }
+      }
+      
+      fetchUser()
+    } else {
+      setCurrentUser(null)
+    }
+  }, [isConnected, account])
 
   if (!mounted) return null
+
+  console.log('🔄 Render - currentUser:', currentUser)
+  console.log('🔄 Render - isConnected:', isConnected)
+  console.log('🔄 Render - account:', account)
+  
+
 
   const handleUserClick = (pseudonym: string) => {
     setViewingProfile(pseudonym)
     setActiveTab(3) // Switch to Profile tab
     setProfileView('profile')
+  }
+
+  const handleOnboardingComplete = (pseudonym: string, displayName: string) => {
+    console.log('🔄 Setting currentUser to:', pseudonym)
+    console.log('🔄 Display name:', displayName)
+    setCurrentUser(pseudonym)
+    setShowOnboarding(false)
+    setPendingWalletAddress(null)
+    setOnboardingCompleted(true)
+    console.log('✅ New user profile created:', pseudonym)
   }
 
   const tabs = [
@@ -143,7 +217,6 @@ export default function AppPage() {
     { icon: Users, label: 'Profile' },
     { icon: Users, label: 'Circles' },
     { icon: Lock, label: 'Encryption' },
-    { icon: ShoppingBag, label: 'Marketplace' },
     { icon: Settings, label: 'Settings' }
   ]
 
@@ -156,11 +229,11 @@ export default function AppPage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between">
                     <div className="flex items-center" style={{ minWidth: '16rem', paddingLeft: '2.5rem' }}>
             <Image
-              src="/logocircle.png"
+              src="/circle.png"
               alt="Circle Logo"
-              width={500}
-              height={150}
-              className="h-24 w-auto"
+              width={120}
+              height={120}
+              className="h-16 w-16"
               priority
             />
           </div>
@@ -278,14 +351,21 @@ export default function AppPage() {
 
           {activeTab === 3 && (
             <div>
-              {profileView === 'profile' && (
+              {!currentUser ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="w-8 h-8 border-2 border-crypto-blue border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-dark-400">Loading profile...</p>
+                  </div>
+                </div>
+              ) : profileView === 'profile' ? (
                 <ProfilePage
-                  pseudonym={viewingProfile || currentUser || 'anus'}
-                  currentUser={currentUser || 'anus'}
+                  pseudonym={viewingProfile || currentUser || ''}
+                  currentUser={currentUser || ''}
                   onBack={viewingProfile ? () => setViewingProfile(null) : undefined}
                   onEditProfile={viewingProfile === null || viewingProfile === currentUser ? () => setProfileView('edit') : undefined}
                 />
-              )}
+              ) : null}
               
               {profileView === 'edit' && !viewingProfile && currentUser && (
                 <EditProfile
@@ -308,10 +388,6 @@ export default function AppPage() {
           )}
 
           {activeTab === 6 && (
-            <Marketplace />
-          )}
-
-          {activeTab === 7 && (
             <div className="space-y-16">
               {/* Privacy & Security Header */}
               <div className="text-center">
@@ -363,6 +439,17 @@ export default function AppPage() {
           // Trigger home feed refresh
           setRefreshTrigger(prev => prev + 1)
         }}
+      />
+
+      {/* Onboarding Modal */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => {
+          setShowOnboarding(false)
+          setPendingWalletAddress(null)
+        }}
+        walletAddress={pendingWalletAddress || ''}
+        onComplete={handleOnboardingComplete}
       />
     </div>
   )

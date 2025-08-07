@@ -13,9 +13,9 @@ import {
   Shield,
   Zap
 } from 'lucide-react'
-import { walletAuth } from '../utils/walletAuth'
-import { Post } from '../pages/api/posts/create'
+import { Post } from '../utils/supabase'
 import { useProfile } from '../hooks/useProfile'
+import { useUniversalWallet } from '../hooks/useUniversalWallet'
 
 export interface CreatePostProps {
   onPostCreated?: (post: Post) => void
@@ -42,6 +42,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
   const [isExpanded, setIsExpanded] = useState(false)
 
   const { generateAvatar } = useProfile()
+  const { account, isConnected } = useUniversalWallet()
   const isReply = !!replyTo && !!parentPost
   const characterLimit = 500
   const remainingChars = characterLimit - content.length
@@ -95,34 +96,16 @@ export const CreatePost: React.FC<CreatePostProps> = ({
     setError('')
 
     try {
-      const currentProfile = walletAuth.getCurrentProfile()
-      if (!currentProfile) {
-        throw new Error('No authenticated user found')
-      }
-
-      // First, sync user to database if needed
-      try {
-        await fetch('/api/users/sync', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            walletAddress: currentProfile.walletAddress,
-            pseudonym: currentProfile.pseudonym,
-            displayName: currentProfile.displayName,
-            bio: currentProfile.bio
-          })
-        })
-      } catch (syncError) {
-        console.warn('User sync failed, continuing with post creation:', syncError)
+      // Check if wallet is connected
+      if (!isConnected || !account) {
+        throw new Error('Wallet not connected')
       }
 
       const postData = {
         content: content.trim(),
-        author: currentProfile.pseudonym,
-        visibility: visibility,
-        image: selectedImage,
+        wallet_address: account,
+        image_url: selectedImage,
+        is_private: visibility === 'private',
         replyTo: replyTo // Include replyTo if this is a reply
       }
 
@@ -171,7 +154,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
         {isReply && parentPost && (
           <div className="flex items-center space-x-2 text-dark-400 text-sm">
             <span>Replying to</span>
-            <span className="text-blue-400 font-medium">{parentPost.author}</span>
+            <span className="text-blue-400 font-medium">{parentPost.author?.pseudonym || 'Unknown'}</span>
             {onCancel && (
               <button
                 type="button"

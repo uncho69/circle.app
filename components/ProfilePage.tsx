@@ -67,33 +67,7 @@ interface ProfilePageProps {
   currentUser?: string | null
 }
 
-// Privacy Badge Component
-const PrivacyBadge: React.FC<{ level: string; size: 'sm' | 'md' }> = ({ level, size }) => {
-  const getBadgeConfig = (level: string) => {
-    switch (level) {
-      case 'founder':
-        return { text: 'FOUNDER', color: 'bg-gradient-to-r from-yellow-500 to-orange-500', icon: '👑' }
-      case 'legendary':
-        return { text: 'LEGENDARY', color: 'bg-gradient-to-r from-purple-500 to-pink-500', icon: '⭐' }
-      case 'verified':
-        return { text: 'VERIFIED', color: 'bg-gradient-to-r from-blue-500 to-cyan-500', icon: '✓' }
-      case 'pseudonymous':
-        return { text: 'PSEUDONYMOUS', color: 'bg-gradient-to-r from-green-500 to-emerald-500', icon: '🕵️' }
-      default:
-        return { text: 'ANONYMOUS', color: 'bg-gradient-to-r from-gray-500 to-slate-500', icon: '👤' }
-    }
-  }
 
-  const config = getBadgeConfig(level)
-  const sizeClasses = size === 'sm' ? 'text-xs px-2 py-1' : 'text-sm px-3 py-1'
-
-  return (
-    <span className={`${config.color} text-white font-bold rounded-full ${sizeClasses} flex items-center space-x-1`}>
-      <span>{config.icon}</span>
-      <span>{config.text}</span>
-    </span>
-  )
-}
 
 // Circle Stats Component
 const CircleStats: React.FC<{ stats: CircleStats }> = ({ stats }) => {
@@ -182,7 +156,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, onLike, onRepost }) => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center space-x-2 mb-2">
             <span className="text-white font-medium">{post.author}</span>
-            <PrivacyBadge level="pseudonymous" size="sm" />
             <span className="text-dark-400 text-sm">{timeAgo(post.timestamp)}</span>
           </div>
           
@@ -420,7 +393,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const circleStats: CircleStats = {
     posts: profile.stats.postsCount,
     reputation: profile.reputation,
-    privacyScore: Math.min(100, Math.max(0, 85 + Math.random() * 10)), // Simulated privacy score (max 95%)
+    privacyScore: Math.round(Math.min(100, Math.max(0, 85 + Math.random() * 10))), // Simulated privacy score (max 95%)
     anonymityLevel: Math.floor(Math.random() * 3) + 1, // 1-3 levels
     zkProofs: Math.min(100, profile.zkProofs), // Cap at 100%
     torSessions: Math.floor(Math.random() * 50) + 10,
@@ -494,7 +467,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="flex-1">
             <div className="flex items-center space-x-3 mb-3">
               <h1 className="text-3xl font-bold text-white">{profile.displayName}</h1>
-              <PrivacyBadge level={privacyLevel} size="md" />
             </div>
             
             <p className="text-dark-400 text-lg mb-4">@{profile.pseudonym}</p>

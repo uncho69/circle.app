@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Activity, RefreshCw, AlertTriangle } from 'lucide-react'
 import { PostItem } from './PostItem'
-import { Post } from '../pages/api/posts/create'
+import { Post } from '../utils/supabase'
 
 export interface HomeFeedProps {
   className?: string
@@ -44,7 +44,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({ className = '' }) => {
   const handleLike = (postId: string) => {
     setPosts(prev => prev.map(post => 
       post.id === postId 
-        ? { ...post, likes: post.likes + 1 }
+        ? { ...post, likes_count: (post.likes_count || 0) + 1 }
         : post
     ))
   }
@@ -52,7 +52,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({ className = '' }) => {
   const handleRepost = (postId: string) => {
     setPosts(prev => prev.map(post => 
       post.id === postId 
-        ? { ...post, reposts: post.reposts + 1 }
+        ? { ...post, reposts_count: (post.reposts_count || 0) + 1 }
         : post
     ))
   }
