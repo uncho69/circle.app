@@ -2,9 +2,12 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/api/notifications": "pages/api/notifications.js",
   "/": "pages/index.js",
   "/app": "pages/app.js",
-  "/auth": "pages/auth.js",
-  "/api/messages/simple": "pages/api/messages/simple.js"
+  "/api/messages/simple": "pages/api/messages/simple.js",
+  "/api/notifications": "pages/api/notifications.js",
+  "/api/users/get": "pages/api/users/get.js",
+  "/api/messages/get": "pages/api/messages/get.js",
+  "/api/messages/conversations": "pages/api/messages/conversations.js",
+  "/auth": "pages/auth.js"
 }

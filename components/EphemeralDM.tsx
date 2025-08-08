@@ -89,39 +89,11 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
 
   const loadConversations = async (walletAddress: string) => {
     try {
-      // Deriva le conversazioni dai messaggi semplificati
-      const response = await fetch(`/api/messages/simple?wallet_address=${walletAddress.toLowerCase()}`)
+      const response = await fetch(`/api/messages/conversations?wallet_address=${walletAddress}`)
       const result = await response.json()
 
       if (result.success) {
-        type RawMsg = { id: string; sender_wallet: string; recipient_wallet: string; content: string; created_at: string }
-        const msgs: RawMsg[] = result.messages || []
-
-        const byPeer = new Map<string, { last_message: string; last_message_time: string; unread_count: number }>()
-
-        msgs.forEach((m) => {
-          const isOutgoing = m.sender_wallet.toLowerCase() === walletAddress.toLowerCase()
-          const peer = isOutgoing ? m.recipient_wallet : m.sender_wallet
-          const existing = byPeer.get(peer)
-          if (!existing || new Date(m.created_at).getTime() > new Date(existing.last_message_time).getTime()) {
-            byPeer.set(peer, {
-              last_message: m.content,
-              last_message_time: m.created_at,
-              unread_count: 0
-            })
-          }
-        })
-
-        const convs: DMConversation[] = Array.from(byPeer.entries()).map(([peer, meta]) => ({
-          conversation_id: `${walletAddress}-${peer}`,
-          other_user_pseudonym: peer,
-          other_user_display_name: peer,
-          last_message: meta.last_message,
-          last_message_time: meta.last_message_time,
-          unread_count: meta.unread_count
-        }))
-
-        setConversations(convs)
+        setConversations(result.conversations || [])
       }
     } catch (error) {
       console.error('Error loading conversations:', error)
@@ -130,27 +102,20 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
 
   const loadConversationMessages = async (walletAddress: string, otherUserWallet: string) => {
     try {
-      const response = await fetch(`/api/messages/simple?wallet_address=${walletAddress}`)
+      const response = await fetch(`/api/messages/get?wallet_address=${walletAddress}&other_user_pseudonym=${otherUserWallet}`)
       const result = await response.json()
-      
-      if (result.success) {
-        // Filter and map messages for this specific conversation
-        const conversationMessages: DMMessage[] = result.messages
-          .filter((msg: any) => 
-            (msg.sender_wallet === walletAddress.toLowerCase() && msg.recipient_wallet === otherUserWallet.toLowerCase()) ||
-            (msg.sender_wallet === otherUserWallet.toLowerCase() && msg.recipient_wallet === walletAddress.toLowerCase())
-          )
-          .map((msg: any) => ({
-            id: msg.id,
-            content: msg.content,
-            from: msg.sender_wallet,
-            to: msg.recipient_wallet,
-            timestamp: msg.created_at
-          }))
 
-        setConversationMessages(conversationMessages)
-        // Schedule ephemeral deletions for received messages
-        scheduleEphemeralDeletions(conversationMessages, walletAddress)
+      if (result.success) {
+        const mapped: DMMessage[] = (result.messages || []).map((msg: any) => ({
+          id: msg.id,
+          content: msg.content,
+          from: msg.is_own ? walletAddress : otherUserWallet,
+          to: msg.is_own ? otherUserWallet : walletAddress,
+          timestamp: msg.created_at
+        }))
+
+        setConversationMessages(mapped)
+        scheduleEphemeralDeletions(mapped, walletAddress)
       }
     } catch (error) {
       console.error('Error loading conversation messages:', error)
@@ -178,8 +143,8 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
 
   const deleteMessages = async (ids: string[]) => {
     try {
-      const resp = await fetch('/api/messages/simple', {
-        method: 'DELETE',
+      const resp = await fetch('/api/messages/delete', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids })
       })
@@ -204,14 +169,14 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
     }
 
     try {
-      const response = await fetch('/api/messages/simple', {
+      const response = await fetch('/api/messages/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           sender_wallet: account,
-          recipient_wallet: recipient,
+          recipient_pseudonym: recipient, // wallet address per API
           content: newMessage.trim()
         })
       })

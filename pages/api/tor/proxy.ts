@@ -16,8 +16,8 @@ interface TorStatus {
 }
 
 // Tor SOCKS proxy configuration
-const TOR_SOCKS_PORT = 9050
-const TOR_SOCKS_HOST = '127.0.0.1'
+const TOR_SOCKS_PORT = process.env.TOR_SOCKS_PORT ? Number(process.env.TOR_SOCKS_PORT) : 9050
+const TOR_SOCKS_HOST = process.env.TOR_SOCKS_HOST || '127.0.0.1'
 
 // Global Tor status
 let torStatus: TorStatus = {
@@ -79,7 +79,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     switch (action) {
       case 'test_connection':
-        // Test if Tor is working
+        // On Vercel Tor locale non è disponibile: fallback
+        if (process.env.VERCEL || process.env.NEXT_PUBLIC_DISABLE_TOR === 'true') {
+          const realIP = getClientIP(req)
+          return res.status(200).json({
+            success: false,
+            realIP,
+            status: { connected: false, circuit: null, latency: 0, error: 'Tor not available in this environment' },
+            error: 'Tor not available in this environment'
+          })
+        }
+
         const testResult = await testTorConnection()
         const realIP = getClientIP(req)
         
@@ -153,6 +163,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       case 'proxy_request':
         // Make request through Tor
+        if (process.env.VERCEL || process.env.NEXT_PUBLIC_DISABLE_TOR === 'true') {
+          return res.status(400).json({ success: false, error: 'Tor not available in this environment' })
+        }
         if (!torStatus.connected) {
           return res.status(400).json({
             success: false,
