@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { PublicProfile, ProfileStats } from '../pages/api/profile/get'
+import { PublicProfile, ProfileStats } from '../types/profile'
 import { ProfileUpdateRequest } from '../pages/api/profile/update'
 import { walletAuth } from '../utils/walletAuth'
 

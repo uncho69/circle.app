@@ -13,7 +13,7 @@ import {
   Monitor
 } from 'lucide-react'
 import { useProfile, ProfileUpdateData } from '../hooks/useProfile'
-import { PublicProfile } from '../pages/api/profile/get'
+import { PublicProfile } from '../types/profile'
 
 export interface EditProfileProps {
   onSave?: (profile: PublicProfile) => void

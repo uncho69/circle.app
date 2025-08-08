@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { supabase } from '../../../utils/supabase'
+import { PublicProfile } from '../../../types/profile'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -53,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Transform data to match expected format
-    const profile = {
+    const profile: PublicProfile = {
       pseudonym: user.pseudonym,
       displayName: user.display_name || user.pseudonym,
       bio: user.bio,
