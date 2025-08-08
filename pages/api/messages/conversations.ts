@@ -24,18 +24,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ success: false, error: 'User not found' })
     }
 
-    // Get conversations using the function
+    // Get conversations manually
     const { data: conversations, error } = await supabase
-      .rpc('get_user_conversations', { user_pseudonym: user.pseudonym })
+      .from('conversations')
+      .select(`
+        id,
+        user1:users!user1_id(id, pseudonym, display_name, wallet_address),
+        user2:users!user2_id(id, pseudonym, display_name, wallet_address)
+      `)
+      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
 
     if (error) {
       console.error('Error fetching conversations:', error)
       return res.status(500).json({ success: false, error: 'Failed to fetch conversations' })
     }
 
+    // Transform conversations data
+    const transformedConversations = conversations?.map(conv => {
+      const isUser1 = conv.user1.wallet_address === wallet_address
+      const otherUser = isUser1 ? conv.user2 : conv.user1
+      
+      return {
+        conversation_id: conv.id,
+        other_user_pseudonym: otherUser.wallet_address,
+        other_user_display_name: otherUser.display_name || otherUser.pseudonym,
+        last_message: null,
+        last_message_time: null,
+        unread_count: 0
+      }
+    }) || []
+
     return res.status(200).json({
       success: true,
-      conversations: conversations || []
+      conversations: transformedConversations
     })
 
   } catch (error) {

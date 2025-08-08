@@ -95,6 +95,15 @@ export const SendCryptoModal: React.FC<SendCryptoModalProps> = ({
     estimateFee()
   }, [amount, selectedToken])
 
+  const toHex = (value: bigint) => '0x' + value.toString(16)
+
+  const toUnitAmount = (val: string, decimals: number): bigint => {
+    const [intPart, fracPart = ''] = val.split('.')
+    const fracPadded = (fracPart + '0'.repeat(decimals)).slice(0, decimals)
+    const weiStr = `${intPart}${fracPadded}`.replace(/^0+/, '') || '0'
+    return BigInt(weiStr)
+  }
+
   const handleSend = async () => {
     if (!isConnected) {
       try {
@@ -114,21 +123,48 @@ export const SendCryptoModal: React.FC<SendCryptoModalProps> = ({
     setError(null)
 
     try {
-      // Mock transaction - in production would send real transaction
-      const mockHash = '0x' + Math.random().toString(16).substring(2, 66)
-      
-      // Simulate transaction delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      setTransactionHash(mockHash)
-      setSuccess(true)
-      
-      console.log('✅ Crypto sent:', {
-        amount,
-        token: selectedToken.symbol,
-        recipient: recipient.address,
-        hash: mockHash
-      })
+      if (!window.ethereum || !account) throw new Error('Wallet not available')
+
+      // Native ETH transfer
+      if (selectedToken.symbol === 'ETH') {
+        const valueWei = toUnitAmount(amount, 18)
+        const txParams: any = {
+          from: account,
+          to: recipient.address,
+          value: toHex(valueWei)
+        }
+        const txHash: string = await (window.ethereum as any).request({
+          method: 'eth_sendTransaction',
+          params: [txParams]
+        })
+        setTransactionHash(txHash)
+        setSuccess(true)
+        console.log('✅ ETH sent:', { amount, to: recipient.address, txHash })
+      } else if (selectedToken.contractAddress) {
+        // ERC-20 transfer via eth_sendTransaction (encode transfer(address,uint256))
+        const selector = '0xa9059cbb' // keccak256('transfer(address,uint256)') first 4 bytes
+        const toAddress = recipient.address.toLowerCase().replace(/^0x/, '')
+        const paddedTo = toAddress.padStart(64, '0')
+        const amountUnits = toUnitAmount(amount, selectedToken.decimals)
+        const paddedAmount = amountUnits.toString(16).padStart(64, '0')
+        const data = selector + paddedTo + paddedAmount
+
+        const txParams: any = {
+          from: account,
+          to: selectedToken.contractAddress,
+          value: '0x0',
+          data: '0x' + data.replace(/^0x/, '')
+        }
+        const txHash: string = await (window.ethereum as any).request({
+          method: 'eth_sendTransaction',
+          params: [txParams]
+        })
+        setTransactionHash(txHash)
+        setSuccess(true)
+        console.log(`✅ ${selectedToken.symbol} sent:`, { amount, to: recipient.address, txHash })
+      } else {
+        throw new Error('Unsupported token')
+      }
 
       // Close modal after 3 seconds
       setTimeout(() => {
@@ -140,7 +176,7 @@ export const SendCryptoModal: React.FC<SendCryptoModalProps> = ({
 
     } catch (error) {
       console.error('Send crypto failed:', error)
-      setError('Transaction failed. Please try again.')
+      setError(error instanceof Error ? error.message : 'Transaction failed. Please try again.')
     } finally {
       setIsLoading(false)
     }

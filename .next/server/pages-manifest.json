@@ -2,13 +2,9 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/": "pages/index.js",
-  "/auth": "pages/auth.js",
-  "/app": "pages/app.js",
-  "/api/tor/proxy": "pages/api/tor/proxy.js",
   "/api/notifications": "pages/api/notifications.js",
-  "/api/users/sync": "pages/api/users/sync.js",
-  "/api/posts/feed": "pages/api/posts/feed.js",
-  "/api/tor/connect": "pages/api/tor/connect.js",
-  "/api/profile/get": "pages/api/profile/get.js"
+  "/": "pages/index.js",
+  "/app": "pages/app.js",
+  "/auth": "pages/auth.js",
+  "/api/messages/simple": "pages/api/messages/simple.js"
 }

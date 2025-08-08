@@ -11,7 +11,7 @@ import { HomeFeed } from '../components/HomeFeed'
 import { ProfilePage } from '../components/ProfilePage'
 import { EditProfile } from '../components/EditProfile'
 import { WalletStats } from '../components/WalletStats'
-import { XMTPChat } from '../components/XMTPChat'
+import { EphemeralDM } from '../components/EphemeralDM'
 import { LitEncryption } from '../components/LitEncryption'
 import { NotificationSystem } from '../components/NotificationSystem'
 import { PrivateGroups } from '../components/PrivateGroups'
@@ -342,7 +342,7 @@ export default function AppPage() {
           )}
 
           {activeTab === 1 && (
-            <XMTPChat currentUserAddress={currentUser || '0x1234567890123456789012345678901234567890'} />
+            <EphemeralDM />
           )}
 
           {activeTab === 2 && (

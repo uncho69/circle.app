@@ -101,15 +101,24 @@ export const useTor = () => {
   const testTorConnection = useCallback(async () => {
     setLoading(true)
     try {
-      const response = await fetch('/api/tor/test', {
+      const response = await fetch('/api/tor/proxy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         }
+        ,
+        body: JSON.stringify({ action: 'test_connection' })
       })
 
-      const result: TorTestResult = await response.json()
-      setTestResult(result)
+      const result = await response.json()
+      setTestResult({
+        success: !!result.success,
+        torIP: result.torIP,
+        realIP: result.realIP,
+        status: result.status,
+        message: result.message,
+        error: result.error
+      })
       
       if (result.success) {
         updateGlobalTorState({
@@ -118,10 +127,7 @@ export const useTor = () => {
         })
         console.log('✅ Tor test successful')
       } else {
-        updateGlobalTorState({
-          connected: false,
-          error: result.error || 'Test failed'
-        })
+        updateGlobalTorState({ connected: false, error: result.error || 'Test failed' })
         console.log('❌ Tor test failed:', result.error)
       }
     } catch (error) {

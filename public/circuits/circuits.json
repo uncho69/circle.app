@@ -1,0 +1,11 @@
+{
+  "compiled": "2025-08-08T14:38:46.983Z",
+  "circuits": {
+    "identity": {
+      "wasm": "/Users/mt/Desktop/Decentral/public/circuits/identity/identity.wasm",
+      "zkey": "/Users/mt/Desktop/Decentral/public/circuits/identity/identity_final.zkey",
+      "vkey": "/Users/mt/Desktop/Decentral/public/circuits/identity/identity_verification_key.json",
+      "r1cs": "/Users/mt/Desktop/Decentral/public/circuits/identity/identity.r1cs"
+    }
+  }
+}

@@ -66,7 +66,7 @@ class ZKProofManager {
       }
 
       // Generate circuit inputs based on proof type
-      const inputs = this.generateCircuitInputs(request)
+      const inputs = await this.generateCircuitInputs(request)
       
       // Try real proof generation first, fallback to simulation
       try {
@@ -100,15 +100,15 @@ class ZKProofManager {
   private async generateRealProof(circuitFiles: CircuitFiles, inputs: any): Promise<any> {
     const path = require('path')
     const fs = require('fs')
-    
-    // Check if circuit files exist
-    const wasmPath = path.join(process.cwd(), 'public', circuitFiles.wasm.replace('/circuits/', ''))
-    const zkeyPath = path.join(process.cwd(), 'public', circuitFiles.zkey.replace('/circuits/', ''))
-    
+
+    // Resolve paths under public directory correctly
+    const wasmPath = path.join(process.cwd(), 'public', circuitFiles.wasm.replace(/^\//, ''))
+    const zkeyPath = path.join(process.cwd(), 'public', circuitFiles.zkey.replace(/^\//, ''))
+
     if (!fs.existsSync(wasmPath)) {
       throw new Error(`WASM file not found: ${wasmPath}`)
     }
-    
+
     if (!fs.existsSync(zkeyPath)) {
       throw new Error(`ZKEY file not found: ${zkeyPath}`)
     }
@@ -116,21 +116,31 @@ class ZKProofManager {
     // Generate proof using groth16
     console.log(`🔮 Generating real ZK proof with files:`, { wasmPath, zkeyPath })
     const { proof, publicSignals } = await groth16.fullProve(inputs, wasmPath, zkeyPath)
-    
+
     console.log(`✅ Real ZK proof generated successfully`)
     return { proof, publicSignals }
   }
 
-  private generateCircuitInputs(request: ZKProofRequest): any {
+  private async generateCircuitInputs(request: ZKProofRequest): Promise<any> {
     const secretHash = crypto.createHash('sha256').update(request.secret).digest('hex')
-    
+
     switch (request.type) {
-      case 'identity':
+      case 'identity': {
+        // Compute merkleRoot = Poseidon(secret, nullifier) so that IsEqual(commitment, merkleRoot) holds
+        const circomlibjs = require('circomlibjs')
+        const F1 = (x: string) => BigInt('0x' + x)
+        const secretBig = F1(secretHash)
+        const nullifierHex = crypto.randomBytes(32).toString('hex')
+        const nullifierBig = F1(nullifierHex)
+        const poseidon = await circomlibjs.buildPoseidon()
+        const commitmentBig = poseidon.F.toObject(poseidon([secretBig, nullifierBig]))
+
         return {
-          secret: secretHash,
-          nullifier: crypto.randomBytes(32).toString('hex'),
-          commitment: crypto.randomBytes(32).toString('hex')
+          secret: secretBig.toString(),
+          nullifier: nullifierBig.toString(),
+          merkleRoot: commitmentBig.toString()
         }
+      }
         
       case 'age':
         // Prove age >= 18 without revealing exact age

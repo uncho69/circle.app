@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Shield, RefreshCw, AlertTriangle, CheckCircle, Globe, Eye, EyeOff } from 'lucide-react'
 import { useTor } from '../hooks/useTor'
@@ -9,7 +9,14 @@ export interface TorStatusProps {
 
 export const TorStatus: React.FC<TorStatusProps> = ({ className = '' }) => {
   const { status, testResult, loading, testTorConnection, createNewCircuit } = useTor()
-  const [showDetails, setShowDetails] = useState(false)
+  const [showDetails, setShowDetails] = useState(true)
+
+  // Esegui automaticamente il test quando connesso ma senza risultato
+  useEffect(() => {
+    if (status.connected && !testResult && !loading) {
+      testTorConnection()
+    }
+  }, [status.connected])
 
   return (
     <div className={`bg-dark-800 border border-dark-700 rounded-xl p-4 ${className}`}>
@@ -21,7 +28,11 @@ export const TorStatus: React.FC<TorStatusProps> = ({ className = '' }) => {
         
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => setShowDetails(!showDetails)}
+            onClick={() => {
+              const next = !showDetails
+              setShowDetails(next)
+              if (next && !testResult && !loading) testTorConnection()
+            }}
             className="p-1 text-dark-400 hover:text-white transition-colors"
           >
             {showDetails ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -47,6 +58,14 @@ export const TorStatus: React.FC<TorStatusProps> = ({ className = '' }) => {
             <CheckCircle size={16} />
             <span className="text-sm font-medium">Connected</span>
           </div>
+
+          {/* Compact IP info always visible when testResult available */}
+          {testResult && (
+            <div className="text-[11px] text-dark-400 flex items-center space-x-3 mt-1">
+              <span>Real IP: <span className="text-gray-300 font-mono">{testResult.realIP || 'Unknown'}</span></span>
+              <span>Tor IP: <span className="text-gray-300 font-mono">{testResult.torIP || '—'}</span></span>
+            </div>
+          )}
           
           {showDetails && testResult && (
             <div className="text-xs text-dark-400 space-y-1 p-2 bg-dark-900/50 rounded-lg">

@@ -8,9 +8,11 @@ import {
   Trash2,
   Eye,
   EyeOff,
-  AlertTriangle
+  AlertTriangle,
+  Coins
 } from 'lucide-react'
 import { useUniversalWallet } from '../hooks/useUniversalWallet'
+import { SendCryptoModal } from './SendCryptoModal'
 
 export interface EphemeralDMProps {
   className?: string
@@ -19,10 +21,11 @@ export interface EphemeralDMProps {
 interface DMMessage {
   id: string
   content: string
-  sender_pseudonym: string
-  sender_display_name: string
-  created_at: string
-  is_own: boolean
+  from: string
+  to: string
+  timestamp: string
+  read?: boolean
+  expiresAt?: string
 }
 
 interface DMConversation {
@@ -43,6 +46,8 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
   const [newRecipient, setNewRecipient] = useState('')
   const [autoDeleteTime, setAutoDeleteTime] = useState(30) // seconds (0 = after reading)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scheduledDeletionRef = useRef<Set<string>>(new Set())
+  const [showSendCrypto, setShowSendCrypto] = useState(false)
 
   const { account } = useUniversalWallet()
 
@@ -84,50 +89,129 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
 
   const loadConversations = async (walletAddress: string) => {
     try {
-      const response = await fetch(`/api/messages/conversations?wallet_address=${walletAddress}`)
+      // Deriva le conversazioni dai messaggi semplificati
+      const response = await fetch(`/api/messages/simple?wallet_address=${walletAddress.toLowerCase()}`)
       const result = await response.json()
-      
+
       if (result.success) {
-        setConversations(result.conversations)
+        type RawMsg = { id: string; sender_wallet: string; recipient_wallet: string; content: string; created_at: string }
+        const msgs: RawMsg[] = result.messages || []
+
+        const byPeer = new Map<string, { last_message: string; last_message_time: string; unread_count: number }>()
+
+        msgs.forEach((m) => {
+          const isOutgoing = m.sender_wallet.toLowerCase() === walletAddress.toLowerCase()
+          const peer = isOutgoing ? m.recipient_wallet : m.sender_wallet
+          const existing = byPeer.get(peer)
+          if (!existing || new Date(m.created_at).getTime() > new Date(existing.last_message_time).getTime()) {
+            byPeer.set(peer, {
+              last_message: m.content,
+              last_message_time: m.created_at,
+              unread_count: 0
+            })
+          }
+        })
+
+        const convs: DMConversation[] = Array.from(byPeer.entries()).map(([peer, meta]) => ({
+          conversation_id: `${walletAddress}-${peer}`,
+          other_user_pseudonym: peer,
+          other_user_display_name: peer,
+          last_message: meta.last_message,
+          last_message_time: meta.last_message_time,
+          unread_count: meta.unread_count
+        }))
+
+        setConversations(convs)
       }
     } catch (error) {
       console.error('Error loading conversations:', error)
     }
   }
 
-  const loadConversationMessages = async (walletAddress: string, otherUserPseudonym: string) => {
+  const loadConversationMessages = async (walletAddress: string, otherUserWallet: string) => {
     try {
-      const response = await fetch(`/api/messages/get?wallet_address=${walletAddress}&other_user_pseudonym=${otherUserPseudonym}`)
+      const response = await fetch(`/api/messages/simple?wallet_address=${walletAddress}`)
       const result = await response.json()
       
       if (result.success) {
-        setConversationMessages(result.messages)
+        // Filter and map messages for this specific conversation
+        const conversationMessages: DMMessage[] = result.messages
+          .filter((msg: any) => 
+            (msg.sender_wallet === walletAddress.toLowerCase() && msg.recipient_wallet === otherUserWallet.toLowerCase()) ||
+            (msg.sender_wallet === otherUserWallet.toLowerCase() && msg.recipient_wallet === walletAddress.toLowerCase())
+          )
+          .map((msg: any) => ({
+            id: msg.id,
+            content: msg.content,
+            from: msg.sender_wallet,
+            to: msg.recipient_wallet,
+            timestamp: msg.created_at
+          }))
+
+        setConversationMessages(conversationMessages)
+        // Schedule ephemeral deletions for received messages
+        scheduleEphemeralDeletions(conversationMessages, walletAddress)
       }
     } catch (error) {
       console.error('Error loading conversation messages:', error)
     }
   }
 
+  const scheduleEphemeralDeletions = (messagesList: DMMessage[], walletAddress: string) => {
+    messagesList.forEach((m) => {
+      const isIncoming = m.from.toLowerCase() !== walletAddress.toLowerCase()
+      if (!isIncoming) return
+      if (scheduledDeletionRef.current.has(m.id)) return
+
+      const ttlMs = autoDeleteTime === 0 ? 1500 : autoDeleteTime * 1000
+      const expiry = new Date(Date.now() + ttlMs).toISOString()
+
+      // Mark read and set expiry locally
+      setConversationMessages(prev => prev.map(pm => pm.id === m.id ? { ...pm, read: true, expiresAt: expiry } : pm))
+      scheduledDeletionRef.current.add(m.id)
+
+      setTimeout(() => {
+        deleteMessages([m.id])
+      }, ttlMs)
+    })
+  }
+
+  const deleteMessages = async (ids: string[]) => {
+    try {
+      const resp = await fetch('/api/messages/simple', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      })
+      const result = await resp.json()
+      if (result.success) {
+        setConversationMessages(prev => prev.filter(m => !ids.includes(m.id)))
+      }
+    } catch (err) {
+      console.error('Failed to delete messages', err)
+    }
+  }
+
   const sendMessage = async () => {
     if (!account || !newMessage.trim()) return
 
-    let recipient = activeConversation || newRecipient
+    let recipient = (activeConversation || newRecipient).toLowerCase()
     if (!recipient) return
 
-    if (recipient === currentUser) {
+    if (account && recipient.toLowerCase() === account.toLowerCase()) {
       alert(`❌ You cannot send messages to yourself.`)
       return
     }
 
     try {
-      const response = await fetch('/api/messages/send', {
+      const response = await fetch('/api/messages/simple', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           sender_wallet: account,
-          recipient_pseudonym: recipient,
+          recipient_wallet: recipient,
           content: newMessage.trim()
         })
       })
@@ -158,10 +242,10 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
     }
   }
 
-  const openConversation = (otherUserPseudonym: string) => {
-    setActiveConversation(otherUserPseudonym)
+  const openConversation = (otherUserWallet: string) => {
+    setActiveConversation(otherUserWallet)
     if (account) {
-      loadConversationMessages(account, otherUserPseudonym)
+      loadConversationMessages(account, otherUserWallet)
     }
   }
 
@@ -174,6 +258,15 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
     if (diffMinutes < 60) return `${diffMinutes}m`
     if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)}h`
     return `${Math.floor(diffMinutes / 1440)}d`
+  }
+
+  const formatAddressMiddle = (address: string) => {
+    if (!address) return ''
+    const a = address.toString()
+    if (a.length <= 14) return a
+    const start = a.slice(0, 8)
+    const end = a.slice(-4)
+    return `${start}...${end}`
   }
 
   const getTimeUntilDelete = (message: DMMessage) => {
@@ -199,6 +292,7 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
   }
 
   return (
+    <>
     <div className={`flex h-[600px] bg-dark-800 border border-dark-700 rounded-2xl overflow-hidden ${className}`}>
       {/* Conversations List */}
       <div className="w-1/3 border-r border-dark-700 flex flex-col">
@@ -219,39 +313,39 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
             <div className="space-y-1 p-2">
               {conversations.map((conv) => (
                 <button
-                  key={conv.pseudonym}
-                  onClick={() => openConversation(conv.pseudonym)}
+                  key={conv.other_user_pseudonym}
+                  onClick={() => openConversation(conv.other_user_pseudonym)}
                   className={`w-full p-3 rounded-xl text-left hover:bg-dark-700 transition-colors ${
-                    activeConversation === conv.pseudonym ? 'bg-dark-700' : ''
+                    activeConversation === conv.other_user_pseudonym ? 'bg-dark-700' : ''
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div className="w-10 h-10 bg-gradient-to-r from-crypto-blue to-crypto-purple rounded-full flex items-center justify-center">
                         <span className="text-white font-semibold text-sm">
-                          {conv.pseudonym.charAt(0).toUpperCase()}
+                          {conv.other_user_pseudonym.charAt(0).toUpperCase()}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-white font-medium text-sm truncate">
-                          {conv.pseudonym}
+                        <div className="text-white font-medium text-sm truncate text-center w-full">
+                          {formatAddressMiddle(conv.other_user_pseudonym)}
                         </div>
-                        {conv.lastMessage && (
+                        {conv.last_message && (
                           <div className="text-dark-400 text-xs truncate">
-                            {conv.lastMessage.content}
+                            {conv.last_message}
                           </div>
                         )}
                       </div>
                     </div>
                     <div className="flex flex-col items-end space-y-1">
-                      {conv.unreadCount > 0 && (
+                      {conv.unread_count > 0 && (
                         <div className="bg-crypto-blue text-white text-xs rounded-full px-2 py-1">
-                          {conv.unreadCount}
+                          {conv.unread_count}
                         </div>
                       )}
-                      {conv.lastMessage && (
+                      {conv.last_message_time && (
                         <div className="text-dark-500 text-xs">
-                          {formatTimeAgo(conv.lastMessage.timestamp)}
+                          {formatTimeAgo(conv.last_message_time)}
                         </div>
                       )}
                     </div>
@@ -276,8 +370,8 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
                       {activeConversation.charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  <div>
-                    <div className="text-white font-semibold">{activeConversation}</div>
+                     <div className="w-full">
+                    <div className="text-white font-semibold text-center w-full">{formatAddressMiddle(activeConversation)}</div>
                     <div className="text-dark-400 text-sm flex items-center">
                       <Lock size={12} className="mr-1" />
                       Ephemeral chat
@@ -295,7 +389,7 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               <AnimatePresence>
                 {conversationMessages.map((message) => {
-                  const isOwnMessage = message.from === currentUser
+                  const isOwnMessage = account ? message.from.toLowerCase() === account.toLowerCase() : false
                   const timeUntilDelete = getTimeUntilDelete(message)
 
                   return (
@@ -360,7 +454,7 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
                   <option value={300}>🕔 5m</option>
                 </select>
               </div>
-              <div className="flex space-x-2">
+              <div className="flex space-x-2 items-center">
                 <input
                   type="text"
                   value={newMessage}
@@ -375,6 +469,13 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
                   className="px-4 py-2 bg-crypto-blue text-white rounded-xl hover:bg-crypto-blue/90 transition-colors disabled:opacity-50"
                 >
                   <Send size={16} />
+                </button>
+                <button
+                  onClick={() => setShowSendCrypto(true)}
+                  title="Send crypto"
+                  className="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 transition-colors"
+                >
+                  <Coins size={16} />
                 </button>
               </div>
             </div>
@@ -425,5 +526,14 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
         )}
       </div>
     </div>
+    {activeConversation ? (
+      <SendCryptoModal
+        isOpen={showSendCrypto}
+        onClose={() => setShowSendCrypto(false)}
+        recipient={{ address: activeConversation as string, pseudonym: formatAddressMiddle(activeConversation as string) }}
+        context="chat"
+      />
+    ) : null}
+    </>
   )
-} 
+}

@@ -56,20 +56,15 @@ const testTorConnection = async (): Promise<{ success: boolean; ip?: string; err
   }
 }
 
-// Get current IP without Tor
-const getRealIP = async (): Promise<string> => {
+// Get client IP from request headers (prefer per-user IP instead of server egress)
+const getClientIP = (req: NextApiRequest): string => {
   try {
-    const response = await fetch('https://httpbin.org/ip', {
-      timeout: 5000
-    })
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    
-    const data = await response.json()
-    return data.origin
-  } catch (error) {
+    const xff = (req.headers['x-forwarded-for'] || '') as string
+    const xri = (req.headers['x-real-ip'] || '') as string
+    const ipFromXff = xff?.split(',').map(s => s.trim()).filter(Boolean)[0]
+    const ip = ipFromXff || xri || (req.socket as any)?.remoteAddress || ''
+    return ip || 'Unknown'
+  } catch {
     return 'Unknown'
   }
 }
@@ -86,7 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       case 'test_connection':
         // Test if Tor is working
         const testResult = await testTorConnection()
-        const realIP = await getRealIP()
+        const realIP = getClientIP(req)
         
         if (testResult.success) {
           torStatus = {
@@ -198,6 +193,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           success: true,
           status: torStatus
         })
+
+      case 'client_ip':
+        return res.status(200).json({ success: true, realIP: getClientIP(req) })
 
       default:
         return res.status(400).json({

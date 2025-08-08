@@ -25,12 +25,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ success: false, error: 'Current user not found' })
     }
 
-    // Get conversation
-    const { data: conversationId, error: convError } = await supabase
-      .rpc('get_or_create_conversation', {
-        user1_pseudonym: currentUser.pseudonym,
-        user2_pseudonym: other_user_pseudonym
+    // Get other user by wallet address
+    const { data: otherUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('wallet_address', other_user_pseudonym)
+      .single()
+
+    if (!otherUser) {
+      return res.status(404).json({ success: false, error: 'Other user not found' })
+    }
+
+    // Create new conversation directly
+    const { data: newConversation, error: convError } = await supabase
+      .from('conversations')
+      .insert({
+        user1_id: currentUser.id,
+        user2_id: otherUser.id
       })
+      .select('id')
+      .single()
+
+    if (convError) {
+      console.error('Error creating conversation:', convError)
+      return res.status(500).json({ success: false, error: 'Failed to create conversation' })
+    }
+
+    const conversationId = newConversation.id
 
     if (convError) {
       console.error('Error getting conversation:', convError)
