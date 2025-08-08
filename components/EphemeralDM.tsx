@@ -160,7 +160,7 @@ export const EphemeralDM: React.FC<EphemeralDMProps> = ({ className = '' }) => {
   const sendMessage = async () => {
     if (!account || !newMessage.trim()) return
 
-    let recipient = (activeConversation || newRecipient).toLowerCase()
+    const recipient = (activeConversation || newRecipient).toLowerCase()
     if (!recipient) return
 
     if (account && recipient.toLowerCase() === account.toLowerCase()) {

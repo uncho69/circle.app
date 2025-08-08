@@ -2,10 +2,11 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/": "pages/index.js",
   "/app": "pages/app.js",
+  "/": "pages/index.js",
   "/api/messages/conversations": "pages/api/messages/conversations.js",
-  "/api/messages/get": "pages/api/messages/get.js",
   "/api/notifications": "pages/api/notifications.js",
-  "/auth": "pages/auth.js"
+  "/auth": "pages/auth.js",
+  "/api/users/get": "pages/api/users/get.js",
+  "/api/messages/get": "pages/api/messages/get.js"
 }
