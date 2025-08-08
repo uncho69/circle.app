@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Get user by wallet address
     const { data: user } = await supabase
       .from('users')
-      .select('pseudonym')
+      .select('id, pseudonym')
       .eq('wallet_address', wallet_address)
       .single()
 

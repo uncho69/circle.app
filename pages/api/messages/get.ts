@@ -36,26 +36,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ success: false, error: 'Other user not found' })
     }
 
-    // Create new conversation directly
-    const { data: newConversation, error: convError } = await supabase
+    // Find or create conversation
+    const { data: existingConvs, error: findError } = await supabase
       .from('conversations')
-      .insert({
-        user1_id: currentUser.id,
-        user2_id: otherUser.id
-      })
-      .select('id')
-      .single()
+      .select('id, user1_id, user2_id')
+      .or(`and(user1_id.eq.${currentUser.id},user2_id.eq.${otherUser.id}),and(user1_id.eq.${otherUser.id},user2_id.eq.${currentUser.id})`)
+      .limit(1)
 
-    if (convError) {
-      console.error('Error creating conversation:', convError)
-      return res.status(500).json({ success: false, error: 'Failed to create conversation' })
+    if (findError) {
+      console.error('Error finding conversation:', findError)
+      return res.status(500).json({ success: false, error: 'Failed to get conversation' })
     }
 
-    const conversationId = newConversation.id
+    let conversationId: string
+    if (existingConvs && existingConvs.length > 0) {
+      conversationId = existingConvs[0].id
+    } else {
+      const { data: newConversation, error: convError } = await supabase
+        .from('conversations')
+        .insert({
+          user1_id: currentUser.id,
+          user2_id: otherUser.id
+        })
+        .select('id')
+        .single()
 
-    if (convError) {
-      console.error('Error getting conversation:', convError)
-      return res.status(500).json({ success: false, error: 'Failed to get conversation' })
+      if (convError) {
+        console.error('Error creating conversation:', convError)
+        return res.status(500).json({ success: false, error: 'Failed to create conversation' })
+      }
+      conversationId = newConversation.id
     }
 
     // Get messages
@@ -86,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({
       success: true,
-      messages: messages?.map(msg => ({
+      messages: messages?.map((msg: any) => ({
         id: msg.id,
         content: msg.content,
         sender_pseudonym: msg.sender.pseudonym,

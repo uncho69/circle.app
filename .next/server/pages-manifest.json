@@ -4,9 +4,8 @@
   "/_document": "pages/_document.js",
   "/": "pages/index.js",
   "/app": "pages/app.js",
-  "/api/messages/get": "pages/api/messages/get.js",
   "/api/messages/conversations": "pages/api/messages/conversations.js",
-  "/api/profile/get": "pages/api/profile/get.js",
+  "/api/messages/get": "pages/api/messages/get.js",
   "/api/notifications": "pages/api/notifications.js",
   "/auth": "pages/auth.js"
 }
